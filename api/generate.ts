@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
       ],
       dimension: { width: 1280, height: 720 },
-      test: true,
+      test: false,
     };
 
     console.log('Sending to HeyGen:', JSON.stringify(payload));
