@@ -1,27 +1,27 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { avatar_id, voice_id, script } = req.body;
+    // Log exactly what arrives from frontend
+    console.log('Raw body:', JSON.stringify(req.body));
 
-    if (!avatar_id || !voice_id || !script) {
-      return res.status(400).json({ error: 'Missing avatar_id, voice_id or script' });
-    }
+    const avatar_id: string = req.body?.avatar_id;
+    const voice_id: string  = req.body?.voice_id;
+    const script: string    = req.body?.script;
 
-    // ✅ Log so you can verify in Vercel logs which avatar_id is received
-    console.log('Generating video with avatar_id:', avatar_id);
+    console.log(`avatar_id="${avatar_id}" voice_id="${voice_id}" script="${script}"`);
 
-    // ✅ FIXED: HeyGen v2 correct payload — script goes inside voice.input_text, NOT a separate script block
+    if (!avatar_id) return res.status(400).json({ error: 'Missing avatar_id' });
+    if (!voice_id)  return res.status(400).json({ error: 'Missing voice_id' });
+    if (!script)    return res.status(400).json({ error: 'Missing script' });
+
+    // Exact payload confirmed from HeyGen v2 docs and working community examples
     const payload = {
       video_inputs: [
         {
@@ -30,13 +30,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             avatar_id: avatar_id,
             avatar_style: 'normal',
           },
-          // HeyGen error path is voice.text.input_text — so input_text goes inside a nested text object
           voice: {
             type: 'text',
             voice_id: voice_id,
-            text: {
-              input_text: script,
-            },
+            input_text: script,   // confirmed correct field — flat inside voice
           },
         },
       ],
@@ -44,32 +41,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       test: false,
     };
 
-    console.log('HeyGen payload:', JSON.stringify(payload, null, 2));
+    console.log('Sending to HeyGen:', JSON.stringify(payload));
 
     const response = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': process.env.HEYGEN_API_KEY || '',
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'x-api-key': process.env.HEYGEN_API_KEY || '',
       },
       body: JSON.stringify(payload),
     });
 
+    const responseText = await response.text();
+    console.log('HeyGen raw response:', responseText);
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HeyGen API error:', errorText);
-      throw new Error(`HeyGen Error: ${errorText}`);
+      throw new Error(`HeyGen Error: ${responseText}`);
     }
 
-    const data = await response.json();
-    console.log('HeyGen generate response:', JSON.stringify(data));
+    const data = JSON.parse(responseText);
+    const video_id = data?.data?.video_id;
 
-    return res.status(200).json({
-      video_id: data.data?.video_id
-    });
+    if (!video_id) {
+      throw new Error(`No video_id in response: ${responseText}`);
+    }
+
+    return res.status(200).json({ video_id });
 
   } catch (error: any) {
-    console.error('Generate error:', error);
+    console.error('Generate handler error:', error.message);
     return res.status(500).json({ error: error.message || 'Failed to generate video' });
   }
 }
