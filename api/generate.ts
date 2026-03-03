@@ -21,33 +21,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ✅ Log so you can verify in Vercel logs which avatar_id is received
     console.log('Generating video with avatar_id:', avatar_id);
 
+    // ✅ FIXED: HeyGen v2 correct payload — script goes inside voice.input_text, NOT a separate script block
+    const payload = {
+      video_inputs: [
+        {
+          character: {
+            type: 'avatar',
+            avatar_id: avatar_id,
+            avatar_style: 'normal',
+          },
+          // HeyGen error path is voice.text.input_text — so input_text goes inside a nested text object
+          voice: {
+            type: 'text',
+            voice_id: voice_id,
+            text: {
+              input_text: script,
+            },
+          },
+        },
+      ],
+      dimension: { width: 1280, height: 720 },
+      test: false,
+    };
+
+    console.log('HeyGen payload:', JSON.stringify(payload, null, 2));
+
     const response = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Api-Key': process.env.HEYGEN_API_KEY || '',
       },
-      body: JSON.stringify({
-        video_inputs: [
-          {
-            // ✅ FIXED: avatar_id must be nested inside character object — this was the root cause
-            character: {
-              type: 'avatar',
-              avatar_id: avatar_id,
-            },
-            voice: {
-              type: 'text',
-              voice_id: voice_id,
-            },
-            script: {
-              type: 'text',
-              input: script,
-            },
-          },
-        ],
-        dimension: { width: 1280, height: 720 },
-        test: false,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
