@@ -4,6 +4,19 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  // ✅ CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
   try {
     const { avatar_id, voice_id, script } = req.body;
 
@@ -39,20 +52,19 @@ export default async function handler(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`HeyGen Error: ${errorText}`);
+      throw new Error(errorText);
     }
 
     const data = await response.json();
 
-    // ✅ Return only video_id (clean contract)
-    res.status(200).json({
+    return res.status(200).json({
       video_id: data.data?.video_id
     });
 
   } catch (error: any) {
-    console.error(error);
-    res.status(500).json({
-      error: error.message || 'Failed to generate video'
+    console.error("Generate Error:", error.message);
+    return res.status(500).json({
+      error: error.message || "Failed to generate video"
     });
   }
 }
