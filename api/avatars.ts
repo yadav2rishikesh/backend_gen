@@ -7,7 +7,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const response = await fetch('https://api.heygen.com/v2/avatars', {
+    // ✅ CHANGED: added ?filter=personal — returns ONLY your avatars, not 1293 stock ones
+    const response = await fetch('https://api.heygen.com/v2/avatars?filter=personal', {
       headers: {
         'Content-Type': 'application/json',
         'X-Api-Key': process.env.HEYGEN_API_KEY || '',
@@ -20,7 +21,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const data = await response.json();
-    // ✅ Return only the avatars array
+    console.log('Personal avatars count:', data?.data?.avatars?.length);
+
+    // Return only the avatars array
     return res.status(200).json(data.data?.avatars || []);
 
   } catch (error: any) {
