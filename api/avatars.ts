@@ -1,12 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ✅ YOUR personal avatar IDs — add new ones here when you create them on HeyGen
-const MY_AVATAR_IDS = [
-  "13c1f299bc854ed697ccf2c5a64218f9", // Nikhil Chhabria
-  "621f9f7e33584a61a6a42d2d4e6b224c", // Nikhil Chhabria 2
-  "b65c8b326bd546aba0edf4f4be65f37e", // Manish - Jio Avatar
-  // Add more avatar_ids here as you create them
+// ✅ YOUR personal avatar IDs — only these will show in the app
+// Each avatar has a default_voice_id mapped here
+const MY_AVATARS = [
+  {
+    avatar_id: "621f9f7e33584a61a6a42d2d4e6b224c",
+    default_voice_id: "9376301972aa48c2ae145ba31190584c", // Nikhil Chhabria voice
+  },
+  {
+    avatar_id: "b65c8b326bd546aba0edf4f4be65f37e",
+    default_voice_id: "yki2AOWh6uhUTfN1hEX0", // Deep Indian Pro
+  },
 ];
+
+const MY_AVATAR_IDS = MY_AVATARS.map((a) => a.avatar_id);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -30,13 +37,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const data = await response.json();
     const allAvatars = data?.data?.avatars ?? [];
 
-    // ✅ Filter to only YOUR avatars
-    const myAvatars = allAvatars.filter((a: any) =>
-      MY_AVATAR_IDS.includes(a.avatar_id)
-    );
+    // ✅ Filter to only YOUR avatars and inject default_voice_id
+    const myAvatars = allAvatars
+      .filter((a: any) => MY_AVATAR_IDS.includes(a.avatar_id))
+      .map((a: any) => {
+        const config = MY_AVATARS.find((m) => m.avatar_id === a.avatar_id);
+        return {
+          ...a,
+          default_voice_id: config?.default_voice_id ?? null,
+        };
+      });
 
-    console.log(`Total: ${allAvatars.length} avatars, Yours: ${myAvatars.length}`);
-
+    console.log(`Returning ${myAvatars.length} personal avatars`);
     return res.status(200).json(myAvatars);
 
   } catch (error: any) {
