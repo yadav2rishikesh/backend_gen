@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ✅ Your ElevenLabs Hindi male voice
-const DEFAULT_ELEVENLABS_VOICE_ID = "JTPrASXyK62cF3L7w8hv";
+// ✅ Sarvam AI Bulbul v3 — pure Hindi Indian male voice
+// Available male voices: Aditya, Rahul, Rohan, Amit, Dev, Varun, Kabir, Manan, Shubh, Arjun
+const SARVAM_SPEAKER = "arjun"; // Deep, clear Hindi male voice
+const SARVAM_LANGUAGE = "hi-IN"; // Hindi India
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -14,43 +16,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const text: string = req.body?.text;
     if (!text) return res.status(400).json({ error: 'Missing text' });
 
-    // ✅ Limit to 500 chars for preview — fast response, saves free tier quota
+    // ✅ Sarvam v3 supports up to 2500 chars — slice for fast preview
     const previewText = text.slice(0, 500);
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${DEFAULT_ELEVENLABS_VOICE_ID}`,
-      {
-        method: 'POST',
-        headers: {
-          'xi-api-key': process.env.ELEVENLABS_API_KEY || '',
-          'Content-Type': 'application/json',
-          'Accept': 'audio/mpeg',
-        },
-        body: JSON.stringify({
-          text: previewText,
-          model_id: 'eleven_multilingual_v2', // ✅ Supports Hindi
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.3,
-            use_speaker_boost: true,
-          },
-        }),
-      }
-    );
+    const response = await fetch('https://api.sarvam.ai/text-to-speech', {
+      method: 'POST',
+      headers: {
+        'api-subscription-key': process.env.SARVAM_API_KEY || '',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        inputs: [previewText],
+        target_language_code: SARVAM_LANGUAGE,
+        speaker: SARVAM_SPEAKER,
+        model: 'bulbul:v3',
+        pace: 1.0,
+        enable_preprocessing: true, // ✅ handles Hinglish, numbers, dates automatically
+      }),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`ElevenLabs Error: ${errorText}`);
+      throw new Error(`Sarvam Error: ${errorText}`);
     }
 
-    // ✅ ElevenLabs returns raw audio binary — convert to base64 and send to frontend
-    const audioBuffer = await response.arrayBuffer();
-    const base64Audio = Buffer.from(audioBuffer).toString('base64');
+    const data = await response.json();
+    // ✅ Sarvam returns { audios: ["base64string"] }
+    const base64Audio = data?.audios?.[0];
+    if (!base64Audio) throw new Error('No audio returned from Sarvam');
 
     return res.status(200).json({
       audio_base64: base64Audio,
-      content_type: 'audio/mpeg',
+      content_type: 'audio/wav',
     });
 
   } catch (error: any) {
