@@ -31,14 +31,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
           voice: {
             type: 'text',
+            // ✅ FIXED: use HeyGen voice_id, NOT ElevenLabs voice_id
             voice_id: voice_id,
             input_text: script,
             speed: 1.0,
           },
         },
       ],
-      // ✅ NO dimension field — let HeyGen use plan default (1080p)
-      // Setting dimension manually triggers RESOLUTION_NOT_ALLOWED on some plans
+      // ✅ No dimension — avoids resolution plan errors
       test: false,
     };
 
