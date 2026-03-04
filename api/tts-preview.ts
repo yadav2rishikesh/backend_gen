@@ -1,10 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ✅ Sarvam AI Bulbul v3 — pure Hindi Indian male voice
-// Available male voices: Aditya, Rahul, Rohan, Amit, Dev, Varun, Kabir, Manan, Shubh, Arjun
-const SARVAM_SPEAKER = "arjun"; // Deep, clear Hindi male voice
-const SARVAM_LANGUAGE = "hi-IN"; // Hindi India
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -16,36 +11,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const text: string = req.body?.text;
     if (!text) return res.status(400).json({ error: 'Missing text' });
 
-    // ✅ Sarvam v3 supports up to 2500 chars — slice for fast preview
     const previewText = text.slice(0, 500);
+
+    console.log('Sarvam TTS request:', previewText.slice(0, 50));
 
     const response = await fetch('https://api.sarvam.ai/text-to-speech', {
       method: 'POST',
       headers: {
-        'API-Subscription-Key': process.env.SARVAM_API_KEY || '', // ✅ correct casing
+        'api-subscription-key': process.env.SARVAM_API_KEY || '', // ✅ exact header from docs
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        inputs: [previewText],
-        target_language_code: SARVAM_LANGUAGE,
-        speaker: SARVAM_SPEAKER,
-        model: 'bulbul:v2',
+        inputs: [previewText],         // ✅ bulbul:v2 uses "inputs" array
+        target_language_code: 'hi-IN', // ✅ Hindi India
+        speaker: 'arjun',             // ✅ Hindi male voice
+        model: 'bulbul:v2',           // ✅ v2 is stable and well supported
         pitch: 0,
         pace: 1.0,
         loudness: 1.5,
         speech_sample_rate: 22050,
-        enable_preprocessing: true,
+        enable_preprocessing: true,   // ✅ handles Hinglish, numbers, dates
       }),
     });
 
+    const responseText = await response.text();
+    console.log('Sarvam raw response:', responseText.slice(0, 200));
+
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Sarvam Error: ${errorText}`);
+      throw new Error(`Sarvam Error: ${responseText}`);
     }
 
-    // ✅ Sarvam returns raw WAV audio bytes directly
-    const audioBuffer = await response.arrayBuffer();
-    const base64Audio = Buffer.from(audioBuffer).toString('base64');
+    const data = JSON.parse(responseText);
+
+    // ✅ Sarvam returns { audios: ["base64encodedstring"] }
+    const base64Audio = data?.audios?.[0];
+    if (!base64Audio) throw new Error('No audio in Sarvam response');
 
     return res.status(200).json({
       audio_base64: base64Audio,
