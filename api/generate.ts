@@ -35,16 +35,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             input_text: script,
             speed: 1.0,
           },
-          background: {
-            type: 'color',
-            value: '#ffffff', // ✅ plain white background — safe default
-          },
         },
       ],
-      // ✅ FIX: Use 720p only if on Creator+ plan, else use 480p to avoid plan errors
-      // Switch to { width: 1280, height: 720 } if your plan supports it
-      dimension: { width: 854, height: 480 },
-      test: false, // ✅ set true to test for free (watermarked, no credit used)
+      // ✅ NO dimension field — let HeyGen use plan default (1080p)
+      // Setting dimension manually triggers RESOLUTION_NOT_ALLOWED on some plans
+      test: false,
     };
 
     console.log('Sending to HeyGen:', JSON.stringify(payload));
