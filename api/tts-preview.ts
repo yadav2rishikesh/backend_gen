@@ -22,16 +22,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const response = await fetch('https://api.sarvam.ai/text-to-speech', {
       method: 'POST',
       headers: {
-        'api-subscription-key': process.env.SARVAM_API_KEY || '',
+        'API-Subscription-Key': process.env.SARVAM_API_KEY || '', // ✅ correct casing
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         inputs: [previewText],
         target_language_code: SARVAM_LANGUAGE,
         speaker: SARVAM_SPEAKER,
-        model: 'bulbul:v3',
+        model: 'bulbul:v2',
+        pitch: 0,
         pace: 1.0,
-        enable_preprocessing: true, // ✅ handles Hinglish, numbers, dates automatically
+        loudness: 1.5,
+        speech_sample_rate: 22050,
+        enable_preprocessing: true,
       }),
     });
 
@@ -40,10 +43,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error(`Sarvam Error: ${errorText}`);
     }
 
-    const data = await response.json();
-    // ✅ Sarvam returns { audios: ["base64string"] }
-    const base64Audio = data?.audios?.[0];
-    if (!base64Audio) throw new Error('No audio returned from Sarvam');
+    // ✅ Sarvam returns raw WAV audio bytes directly
+    const audioBuffer = await response.arrayBuffer();
+    const base64Audio = Buffer.from(audioBuffer).toString('base64');
 
     return res.status(200).json({
       audio_base64: base64Audio,
