@@ -1,8 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ✅ Best Indian Hindi male voice on ElevenLabs
-// "Aakash Aryan" — most famous Hindi AI voice, 50M+ downloads, neutral accent
-const DEFAULT_ELEVENLABS_VOICE_ID = "pqHfZKP75CvOlQylNhV4"; // Aakash Aryan
+// ✅ Your ElevenLabs Hindi male voice
+const DEFAULT_ELEVENLABS_VOICE_ID = "JTPrASXyK62cF3L7w8hv";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
