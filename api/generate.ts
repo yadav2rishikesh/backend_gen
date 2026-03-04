@@ -4,24 +4,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // Log exactly what arrives from frontend
     console.log('Raw body:', JSON.stringify(req.body));
 
     const avatar_id: string = req.body?.avatar_id;
     const voice_id: string  = req.body?.voice_id;
     const script: string    = req.body?.script;
 
-    console.log(`avatar_id="${avatar_id}" voice_id="${voice_id}" script="${script}"`);
+    console.log(`avatar_id="${avatar_id}" voice_id="${voice_id}" script="${script?.slice(0, 50)}"`);
 
     if (!avatar_id) return res.status(400).json({ error: 'Missing avatar_id' });
     if (!voice_id)  return res.status(400).json({ error: 'Missing voice_id' });
     if (!script)    return res.status(400).json({ error: 'Missing script' });
 
-    // Exact payload confirmed from HeyGen v2 docs and working community examples
     const payload = {
       video_inputs: [
         {
@@ -33,12 +32,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           voice: {
             type: 'text',
             voice_id: voice_id,
-            input_text: script,   // confirmed correct field — flat inside voice
+            input_text: script,
+            speed: 1.0,
+          },
+          background: {
+            type: 'color',
+            value: '#ffffff', // ✅ plain white background — safe default
           },
         },
       ],
-      dimension: { width: 1280, height: 720 },
-      test: false,
+      // ✅ FIX: Use 720p only if on Creator+ plan, else use 480p to avoid plan errors
+      // Switch to { width: 1280, height: 720 } if your plan supports it
+      dimension: { width: 854, height: 480 },
+      test: false, // ✅ set true to test for free (watermarked, no credit used)
     };
 
     console.log('Sending to HeyGen:', JSON.stringify(payload));
@@ -57,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log('HeyGen raw response:', responseText);
 
     if (!response.ok) {
-      throw new Error(`HeyGen Error: ${responseText}`);
+      throw new Error(`HeyGen Error ${response.status}: ${responseText}`);
     }
 
     const data = JSON.parse(responseText);
