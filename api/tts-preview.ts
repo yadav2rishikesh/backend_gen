@@ -4,6 +4,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -12,44 +13,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!text) return res.status(400).json({ error: 'Missing text' });
 
     const previewText = text.slice(0, 500);
+    console.log('ElevenLabs TTS request:', previewText.slice(0, 50));
 
-    console.log('Sarvam TTS request:', previewText.slice(0, 50));
+    // Voice ID: "George" — multilingual, works well with Hindi/Hinglish
+    // You can replace with any voice ID from your ElevenLabs account
+    const voiceId = 'JBFqnCBsd6RMkjVDRZzb';
 
-    const response = await fetch('https://api.sarvam.ai/text-to-speech', {
-      method: 'POST',
-      headers: {
-        'api-subscription-key': process.env.SARVAM_API_KEY || '', // ✅ exact header from docs
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        inputs: [previewText],         // ✅ bulbul:v2 uses "inputs" array
-        target_language_code: 'hi-IN', // ✅ Hindi India
-        speaker: 'arjun',             // ✅ Hindi male voice
-        model: 'bulbul:v2',           // ✅ v2 is stable and well supported
-        pitch: 0,
-        pace: 1.0,
-        loudness: 1.5,
-        speech_sample_rate: 22050,
-        enable_preprocessing: true,   // ✅ handles Hinglish, numbers, dates
-      }),
-    });
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: 'POST',
+        headers: {
+          'xi-api-key': process.env.ELEVENLABS_API_KEY || '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: previewText,
+          model_id: 'eleven_multilingual_v2', // ✅ supports Hindi & Hinglish
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+          },
+        }),
+      }
+    );
 
-    const responseText = await response.text();
-    console.log('Sarvam raw response:', responseText.slice(0, 200));
+    console.log('ElevenLabs response status:', response.status);
 
     if (!response.ok) {
-      throw new Error(`Sarvam Error: ${responseText}`);
+      const errorText = await response.text();
+      throw new Error(`ElevenLabs Error ${response.status}: ${errorText}`);
     }
 
-    const data = JSON.parse(responseText);
-
-    // ✅ Sarvam returns { audios: ["base64encodedstring"] }
-    const base64Audio = data?.audios?.[0];
-    if (!base64Audio) throw new Error('No audio in Sarvam response');
+    // ✅ ElevenLabs returns raw audio bytes — convert to base64
+    const audioBuffer = await response.arrayBuffer();
+    const base64Audio = Buffer.from(audioBuffer).toString('base64');
 
     return res.status(200).json({
       audio_base64: base64Audio,
-      content_type: 'audio/wav',
+      content_type: 'audio/mpeg', // ✅ ElevenLabs returns mp3
     });
 
   } catch (error: any) {
