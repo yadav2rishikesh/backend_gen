@@ -1,5 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// ✅ Best Indian Hindi male voice on ElevenLabs
+// "Aakash Aryan" — most famous Hindi AI voice, 50M+ downloads, neutral accent
+const DEFAULT_ELEVENLABS_VOICE_ID = "pqHfZKP75CvOlQylNhV4"; // Aakash Aryan
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -8,42 +12,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const voice_id: string = req.body?.voice_id;
     const text: string = req.body?.text;
-
-    if (!voice_id) return res.status(400).json({ error: 'Missing voice_id' });
     if (!text) return res.status(400).json({ error: 'Missing text' });
 
-    // ✅ Limit to 300 chars for preview — saves cost, loads fast
-    const previewText = text.slice(0, 300);
+    // ✅ Limit to 500 chars for preview — fast response, saves free tier quota
+    const previewText = text.slice(0, 500);
 
-    const response = await fetch('https://api.heygen.com/v1/audio/text_to_speech', {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'x-api-key': process.env.HEYGEN_API_KEY || '',
-      },
-      body: JSON.stringify({
-        voice_id,
-        text: previewText,
-      }),
-    });
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${DEFAULT_ELEVENLABS_VOICE_ID}`,
+      {
+        method: 'POST',
+        headers: {
+          'xi-api-key': process.env.ELEVENLABS_API_KEY || '',
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text: previewText,
+          model_id: 'eleven_multilingual_v2', // ✅ Supports Hindi
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.3,
+            use_speaker_boost: true,
+          },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`HeyGen TTS Error: ${errorText}`);
+      throw new Error(`ElevenLabs Error: ${errorText}`);
     }
 
-    const data = await response.json();
-    // HeyGen returns { data: { audio_url: "..." } }
-    const audioUrl = data?.data?.audio_url ?? data?.audio_url;
+    // ✅ ElevenLabs returns raw audio binary — convert to base64 and send to frontend
+    const audioBuffer = await response.arrayBuffer();
+    const base64Audio = Buffer.from(audioBuffer).toString('base64');
 
-    if (!audioUrl) {
-      throw new Error('No audio_url returned from HeyGen');
-    }
-
-    return res.status(200).json({ audio_url: audioUrl });
+    return res.status(200).json({
+      audio_base64: base64Audio,
+      content_type: 'audio/mpeg',
+    });
 
   } catch (error: any) {
     console.error('TTS preview error:', error.message);
