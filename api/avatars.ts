@@ -1,16 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // ✅ Your personal avatar IDs — add new ones here when you create on HeyGen
-// Voice is automatically taken from HeyGen's own default_voice_id — no hardcoding needed
 const MY_AVATAR_IDS = [
   "621f9f7e33584a61a6a42d2d4e6b224c", // Nikhil Chhabria
   "b65c8b326bd546aba0edf4f4be65f37e", // Manish - Jio Avatar
+  "23a8ea2ea0294fe68b0f1f514081bf1d", // Ekta ✅ added
 ];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
@@ -40,7 +41,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
     console.log(`Returning ${myAvatars.length} personal avatars`);
-    // ✅ default_voice_id already comes from HeyGen — natural human voice
     return res.status(200).json(myAvatars);
 
   } catch (error: any) {
