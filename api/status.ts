@@ -4,11 +4,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
     const { video_id } = req.query;
-
     if (!video_id) {
       return res.status(400).json({ error: 'Missing video_id' });
     }
@@ -28,14 +28,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const data = await response.json();
-    console.log('Status response for', video_id, ':', JSON.stringify(data));
 
-    // ✅ FIXED: unwrap and return flat object so frontend gets status & video_url directly
+    // ✅ Log FULL response so we can see the real failure reason
+    console.log('Full status response for', video_id, ':', JSON.stringify(data));
+
+    const status = data.data?.status;
+    const errorMsg = data.data?.error ?? data.error ?? null;
+
+    // ✅ If failed, log the actual HeyGen error message
+    if (status === 'failed') {
+      console.error(`Video ${video_id} FAILED. HeyGen error:`, errorMsg);
+    }
+
     return res.status(200).json({
-      status: data.data?.status,
+      status,
       video_url: data.data?.video_url,
       thumbnail_url: data.data?.thumbnail_url,
       duration: data.data?.duration,
+      // ✅ Pass the real error message to frontend
+      error: errorMsg,
     });
 
   } catch (error: any) {
