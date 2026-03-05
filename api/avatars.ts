@@ -1,8 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ✅ Hardcoded Swati Verma avatar only
+// ✅ Your personal avatar IDs
 const MY_AVATAR_IDS = [
-  "10483c6d38564597a9491c0dbff9b0dd", // Swati Verma
+  "621f9f7e33584a61a6a42d2d4e6b224c", // Nikhil Chhabria
+  "b65c8b326bd546aba0edf4f4be65f37e", // Manish - Jio Avatar
+  "23a8ea2ea0294fe68b0f1f514081bf1d", // Ekta
+  "10483c6d38564597a9491c0dbff9b0dd", // Swati Verma ✅ added
 ];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -26,9 +29,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const data = await response.json();
-    const allAvatars: any[] = data?.data?.avatars ?? [];
+    const allAvatars = data?.data?.avatars ?? [];
 
-    // ✅ Filter to Swati only + deduplicate
+    // ✅ Filter to YOUR avatars only + deduplicate by avatar_id
     const seen = new Set<string>();
     const myAvatars = allAvatars
       .filter((a: any) => MY_AVATAR_IDS.includes(a.avatar_id))
@@ -36,16 +39,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (seen.has(a.avatar_id)) return false;
         seen.add(a.avatar_id);
         return true;
-      })
-      .map((a: any) => ({
-        avatar_id: a.avatar_id,
-        id: a.avatar_id,
-        name: a.avatar_name || 'Swati Verma',
-        image: a.preview_image_url || a.thumbnail_url || '',
-        role: a.gender || 'female',
-      }));
+      });
 
-    console.log(`Returning ${myAvatars.length} avatars`);
+    console.log(`Returning ${myAvatars.length} personal avatars`);
     return res.status(200).json(myAvatars);
   } catch (error: any) {
     console.error('Avatars error:', error.message);
