@@ -12,20 +12,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
 
-    console.log("Raw body:", JSON.stringify(req.body));
+    console.log("Incoming request:", JSON.stringify(req.body));
 
     const avatar_id: string = req.body?.avatar_id;
-    const voice_id: string = req.body?.voice_id;
+    const voice_id: string = req.body?.voice_id; // ElevenLabs voice id
     const script: string = req.body?.script;
 
     if (!avatar_id) return res.status(400).json({ error: "Missing avatar_id" });
     if (!voice_id) return res.status(400).json({ error: "Missing voice_id" });
     if (!script) return res.status(400).json({ error: "Missing script" });
 
-    console.log(`Avatar: ${avatar_id} | ElevenLabs voice: ${voice_id}`);
+    console.log(`Avatar: ${avatar_id} | Voice: ${voice_id}`);
 
     /* -----------------------------
-       STEP 1: Generate voice using ElevenLabs
+       STEP 1: Improve Script
+    ------------------------------ */
+
+    const improvedScript = script.replace(/\./g, ". ");
+
+    /* -----------------------------
+       STEP 2: Generate Voice
+       using ElevenLabs
     ------------------------------ */
 
     const voiceResponse = await fetch(
@@ -37,11 +44,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          text: script,
+          text: improvedScript,
           model_id: "eleven_multilingual_v2",
           voice_settings: {
-            stability: 0.4,
-            similarity_boost: 0.85
+            stability: 0.35,
+            similarity_boost: 0.9,
+            style: 0.4,
+            use_speaker_boost: true
           }
         })
       }
@@ -58,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log("Voice generated successfully");
 
     /* -----------------------------
-       STEP 2: Send audio to HeyGen
+       STEP 3: Send to HeyGen
     ------------------------------ */
 
     const payload = {
@@ -76,7 +85,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       ],
 
-      // Try 1080p
       dimension: {
         width: 1920,
         height: 1080
@@ -85,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       test: false
     };
 
-    console.log("Sending to HeyGen...");
+    console.log("Sending request to HeyGen...");
 
     const response = await fetch(
       "https://api.heygen.com/v2/video/generate",
@@ -124,5 +132,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({
       error: error.message || "Failed to generate video"
     });
+
   }
 }
