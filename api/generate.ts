@@ -9,6 +9,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
+
     console.log('Raw body:', JSON.stringify(req.body));
 
     const avatar_id: string = req.body?.avatar_id;
@@ -21,25 +22,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!voice_id)  return res.status(400).json({ error: 'Missing voice_id' });
     if (!script)    return res.status(400).json({ error: 'Missing script' });
 
+    // ✅ Updated payload with latest rendering + optional 1080p
     const payload = {
       video_inputs: [
         {
           character: {
             type: 'avatar',
             avatar_id: avatar_id,
-            avatar_style: 'normal',
+            avatar_style: 'normal'
           },
           voice: {
             type: 'text',
-            // ✅ FIXED: use HeyGen voice_id, NOT ElevenLabs voice_id
             voice_id: voice_id,
             input_text: script,
-            speed: 1.0,
-          },
-        },
+            speed: 1.0
+          }
+        }
       ],
-      // ✅ No dimension — avoids resolution plan errors
-      test: false,
+
+      // Try 1080p (remove if your plan does not support)
+      dimension: {
+        width: 1920,
+        height: 1080
+      },
+
+      test: false
     };
 
     console.log('Sending to HeyGen:', JSON.stringify(payload));
@@ -49,9 +56,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers: {
         'accept': 'application/json',
         'content-type': 'application/json',
-        'x-api-key': process.env.HEYGEN_API_KEY || '',
+        'x-api-key': process.env.HEYGEN_API_KEY || ''
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payload)
     });
 
     const responseText = await response.text();
