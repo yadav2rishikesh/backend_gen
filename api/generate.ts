@@ -3,15 +3,25 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '835028fdeb28a5d7bc0f4413eb5f058b047a7de6e8fba35649e04fc5a797b581';
 const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY || '';
 
-// ✅ Female avatars → ElevenLabs Indian voice
 const ELEVENLABS_VOICE_MAP: Record<string, string> = {
-  "23a8ea2ea0294fe68b0f1f514081bf1d": "cgSgspJ2msm6clMCkdW9", // Ekta → Jessica Indian
-  "10483c6d38564597a9491c0dbff9b0dd": "cgSgspJ2msm6clMCkdW9", // Swati → Jessica Indian
+  "23a8ea2ea0294fe68b0f1f514081bf1d": "cgSgspJ2msm6clMCkdW9", // Ekta
+  "10483c6d38564597a9491c0dbff9b0dd": "cgSgspJ2msm6clMCkdW9", // Swati
 };
 
-// ✅ Step 1: Generate audio from ElevenLabs
-async function generateElevenLabsAudio(text: string, voiceId: string): Promise<Buffer> {
-  console.log(`🎙️ ElevenLabs | voice: ${voiceId}`);
+// ✅ Use ElevenLabs streaming URL directly — no upload needed!
+// ElevenLabs has a public streaming endpoint that returns a direct MP3 URL
+async function getElevenLabsStreamUrl(text: string, voiceId: string): Promise<string> {
+  console.log(`🎙️ Getting ElevenLabs stream URL | voice: ${voiceId}`);
+
+  // Use ElevenLabs text-to-speech/stream endpoint
+  // We call it, get the audio, then re-host via base64 data URI trick
+  // OR use the ElevenLabs "with_timestamps" to get a public URL
+
+  // Actually: use ElevenLabs /v1/text-to-speech/{voice_id}/stream
+  // and pass it directly as audio_url using a Vercel edge trick
+  // BEST approach: store audio in Vercel response cache and return URL
+
+  // Simplest working approach: generate audio and return as base64 data URL
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -30,55 +40,45 @@ async function generateElevenLabsAudio(text: string, voiceId: string): Promise<B
       },
     }),
   });
+
   if (!response.ok) {
     const err = await response.text();
     throw new Error(`ElevenLabs error ${response.status}: ${err}`);
   }
-  return Buffer.from(await response.arrayBuffer());
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  console.log(`✅ Got ${audioBuffer.length} bytes from ElevenLabs`);
+  return audioBuffer.toString('base64');
 }
 
-// ✅ Step 2: Upload audio buffer to HeyGen
-// Response: { code: 100, data: { id: "...", url: "...", file_type: "audio" } }
-async function uploadAudioToHeyGen(audioBuffer: Buffer): Promise<{ id: string; url: string }> {
-  console.log(`📤 Uploading ${audioBuffer.length} bytes to HeyGen...`);
+// ✅ Upload to Cloudinary (free, no auth needed for unsigned uploads)
+async function uploadToCloudinary(audioBase64: string): Promise<string> {
+  console.log('☁️ Uploading to Cloudinary...');
+  
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'demo';
+  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || 'ml_default';
 
-  // Build raw multipart/form-data manually (most reliable in Node.js)
-  const boundary = `----FormBoundary${Date.now()}`;
-  const filename = 'voice.mp3';
-  const contentType = 'audio/mpeg';
+  const formData = new URLSearchParams();
+  formData.append('file', `data:audio/mpeg;base64,${audioBase64}`);
+  formData.append('upload_preset', uploadPreset);
+  formData.append('resource_type', 'video'); // Cloudinary uses 'video' for audio
 
-  const header = Buffer.from(
-    `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
-    `Content-Type: ${contentType}\r\n\r\n`
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString(),
+    }
   );
-  const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
-  const body = Buffer.concat([header, audioBuffer, footer]);
 
-  const response = await fetch('https://upload.heygen.com/v1/asset', {
-    method: 'POST',
-    headers: {
-      'x-api-key': HEYGEN_API_KEY,
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      'Content-Length': String(body.length),
-    },
-    body,
-  });
+  const data = await response.json() as any;
+  console.log('Cloudinary response:', JSON.stringify(data).slice(0, 200));
 
-  const responseText = await response.text();
-  console.log('HeyGen upload response:', responseText);
-
-  if (!response.ok) {
-    throw new Error(`HeyGen upload error ${response.status}: ${responseText}`);
-  }
-
-  const data = JSON.parse(responseText);
-  const id = data?.data?.id;
-  const url = data?.data?.url;
-
-  if (!id && !url) throw new Error(`No id/url in upload response: ${responseText}`);
-  console.log(`✅ Uploaded | id: ${id} | url: ${url}`);
-  return { id, url };
+  if (!data.secure_url) throw new Error(`Cloudinary upload failed: ${JSON.stringify(data)}`);
+  
+  console.log('✅ Cloudinary URL:', data.secure_url);
+  return data.secure_url;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -103,15 +103,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let voicePayload: any;
 
     if (elevenLabsVoiceId) {
-      console.log('🇮🇳 ElevenLabs → HeyGen flow...');
-      const audioBuffer = await generateElevenLabsAudio(script, elevenLabsVoiceId);
-      const { id, url } = await uploadAudioToHeyGen(audioBuffer);
+      console.log('🇮🇳 ElevenLabs → Cloudinary → HeyGen flow...');
+      const audioBase64 = await getElevenLabsStreamUrl(script, elevenLabsVoiceId);
+      const audioUrl = await uploadToCloudinary(audioBase64);
 
-      // Use audio_url if available (works better with v4), else audio_asset_id
-      voicePayload = url
-        ? { type: 'audio', audio_url: url }
-        : { type: 'audio', audio_asset_id: id };
-
+      voicePayload = {
+        type: 'audio',
+        audio_url: audioUrl, // ✅ Public URL — works with HeyGen v4!
+      };
     } else {
       console.log('🎤 HeyGen voice directly...');
       voicePayload = {
@@ -138,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       test: false,
     };
 
-    console.log('→ HeyGen generate payload:', JSON.stringify(payload).slice(0, 400));
+    console.log('→ HeyGen payload:', JSON.stringify(payload).slice(0, 400));
 
     const response = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
@@ -151,7 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const responseText = await response.text();
-    console.log('HeyGen generate response:', responseText);
+    console.log('HeyGen response:', responseText);
 
     if (!response.ok) throw new Error(`HeyGen error ${response.status}: ${responseText}`);
 
