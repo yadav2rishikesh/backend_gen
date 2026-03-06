@@ -1,23 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '835028fdeb28a5d7bc0f4413eb5f058b047a7de6e8fba35649e04fc5a797b581';
+const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY || '';
 
-// ✅ Best Indian English female voice on ElevenLabs
-// "Aria" - Indian English accent, natural and clear
-const INDIAN_FEMALE_VOICE_ID = 'XB0fDUnXU5powFXDhCwa'; // Charlotte - warm
-const INDIAN_VOICE_MAP: Record<string, string> = {
-  // Female avatars → Indian female voice
-  "23a8ea2ea0294fe68b0f1f514081bf1d": "cgSgspJ2msm6clMCkdW9", // Ekta → Jessica (Indian)
-  "10483c6d38564597a9491c0dbff9b0dd": "cgSgspJ2msm6clMCkdW9", // Swati → Jessica (Indian)
-  // Male avatars → their HeyGen matched voice (keep as text)
-  "13c1f299bc854ed697ccf2c5a64218f9": null, // Nikhil → use HeyGen voice
-  "621f9f7e33584a61a6a42d2d4e6b224c": null, // Nikhil → use HeyGen voice
-  "b65c8b326bd546aba0edf4f4be65f37e": null, // Manish → use HeyGen voice
+// ✅ Female avatars use ElevenLabs, male use HeyGen directly
+const ELEVENLABS_VOICE_MAP: Record<string, string> = {
+  "23a8ea2ea0294fe68b0f1f514081bf1d": "cgSgspJ2msm6clMCkdW9", // Ekta → Jessica Indian
+  "10483c6d38564597a9491c0dbff9b0dd": "cgSgspJ2msm6clMCkdW9", // Swati → Jessica Indian
 };
 
+// ✅ Step 1: Generate audio from ElevenLabs
 async function generateElevenLabsAudio(text: string, voiceId: string): Promise<Buffer> {
-  console.log(`🎙️ Generating ElevenLabs audio | voice: ${voiceId} | text: "${text.slice(0, 50)}..."`);
-  
+  console.log(`🎙️ ElevenLabs | voice: ${voiceId}`);
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -27,7 +21,7 @@ async function generateElevenLabsAudio(text: string, voiceId: string): Promise<B
     },
     body: JSON.stringify({
       text,
-      model_id: 'eleven_multilingual_v2', // ✅ Best model for Indian accent
+      model_id: 'eleven_multilingual_v2',
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.8,
@@ -36,14 +30,44 @@ async function generateElevenLabsAudio(text: string, voiceId: string): Promise<B
       },
     }),
   });
-
   if (!response.ok) {
     const err = await response.text();
     throw new Error(`ElevenLabs error ${response.status}: ${err}`);
   }
+  return Buffer.from(await response.arrayBuffer());
+}
 
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+// ✅ Step 2: Upload audio to HeyGen and get asset_id
+async function uploadAudioToHeyGen(audioBuffer: Buffer): Promise<string> {
+  console.log('📤 Uploading audio to HeyGen...');
+  
+  // Convert buffer to blob-like for fetch
+  const formData = new FormData();
+  const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+  formData.append('file', blob, 'voice.mp3');
+  formData.append('type', 'audio');
+
+  const response = await fetch('https://upload.heygen.com/v1/asset', {
+    method: 'POST',
+    headers: {
+      'x-api-key': HEYGEN_API_KEY,
+    },
+    body: formData,
+  });
+
+  const responseText = await response.text();
+  console.log('HeyGen upload response:', responseText);
+
+  if (!response.ok) {
+    throw new Error(`HeyGen upload error ${response.status}: ${responseText}`);
+  }
+
+  const data = JSON.parse(responseText);
+  const asset_id = data?.data?.id || data?.id;
+  if (!asset_id) throw new Error(`No asset_id returned: ${responseText}`);
+  
+  console.log('✅ Audio uploaded, asset_id:', asset_id);
+  return asset_id;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -64,26 +88,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!voice_id)  return res.status(400).json({ error: 'Missing voice_id' });
     if (!script)    return res.status(400).json({ error: 'Missing script' });
 
-    // ✅ Check if this avatar should use ElevenLabs
-    const elevenLabsVoiceId = INDIAN_VOICE_MAP[avatar_id];
-    const useElevenLabs = elevenLabsVoiceId !== null && elevenLabsVoiceId !== undefined && avatar_id in INDIAN_VOICE_MAP;
-
+    const elevenLabsVoiceId = ELEVENLABS_VOICE_MAP[avatar_id];
     let voicePayload: any;
 
-    if (useElevenLabs && elevenLabsVoiceId) {
-      // ✅ Generate audio via ElevenLabs first
-      console.log('🇮🇳 Using ElevenLabs for Indian accent...');
+    if (elevenLabsVoiceId) {
+      // ✅ ElevenLabs flow: generate → upload → use asset_id
+      console.log('🇮🇳 Using ElevenLabs Indian voice...');
       const audioBuffer = await generateElevenLabsAudio(script, elevenLabsVoiceId);
-      const audioBase64 = audioBuffer.toString('base64');
+      const asset_id = await uploadAudioToHeyGen(audioBuffer);
 
       voicePayload = {
         type: 'audio',
-        audio_base64: audioBase64,
-        name: 'elevenlabs_audio',
+        audio_asset_id: asset_id, // ✅ Correct field!
       };
-      console.log('✅ ElevenLabs audio generated, sending to HeyGen...');
     } else {
-      // Use HeyGen voice directly for male avatars
+      // Male avatars — use HeyGen voice directly
       console.log('🎤 Using HeyGen voice directly...');
       voicePayload = {
         type: 'text',
@@ -105,9 +124,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           voice: voicePayload,
         },
       ],
-      dimension: { width: 1920, height: 1080 }, // ✅ Full HD
+      dimension: { width: 1920, height: 1080 },
       avatar_version: 'v4',
-      caption: true, // ✅ Auto captions
+      caption: true,
       test: false,
     };
 
@@ -118,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers: {
         'accept': 'application/json',
         'content-type': 'application/json',
-        'x-api-key': process.env.HEYGEN_API_KEY || '',
+        'x-api-key': HEYGEN_API_KEY,
       },
       body: JSON.stringify(payload),
     });
