@@ -3,7 +3,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '835028fdeb28a5d7bc0f4413eb5f058b047a7de6e8fba35649e04fc5a797b581';
 const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY || '';
 
-// ✅ Female avatars use ElevenLabs, male use HeyGen directly
 const ELEVENLABS_VOICE_MAP: Record<string, string> = {
   "23a8ea2ea0294fe68b0f1f514081bf1d": "cgSgspJ2msm6clMCkdW9", // Ekta → Jessica Indian
   "10483c6d38564597a9491c0dbff9b0dd": "cgSgspJ2msm6clMCkdW9", // Swati → Jessica Indian
@@ -37,22 +36,25 @@ async function generateElevenLabsAudio(text: string, voiceId: string): Promise<B
   return Buffer.from(await response.arrayBuffer());
 }
 
-// ✅ Step 2: Upload audio to HeyGen and get asset_id
+// ✅ Step 2: Upload audio to HeyGen using correct API
 async function uploadAudioToHeyGen(audioBuffer: Buffer): Promise<string> {
   console.log('📤 Uploading audio to HeyGen...');
-  
-  // Convert buffer to blob-like for fetch
-  const formData = new FormData();
-  const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-  formData.append('file', blob, 'voice.mp3');
-  formData.append('type', 'audio');
 
-  const response = await fetch('https://upload.heygen.com/v1/asset', {
+  // Convert to base64 and use the correct upload endpoint
+  const base64Audio = audioBuffer.toString('base64');
+  
+  const response = await fetch('https://api.heygen.com/v1/asset', {
     method: 'POST',
     headers: {
       'x-api-key': HEYGEN_API_KEY,
+      'Content-Type': 'application/json',
     },
-    body: formData,
+    body: JSON.stringify({
+      data: base64Audio,
+      type: 'audio',
+      name: 'elevenlabs_voice.mp3',
+      content_type: 'audio/mpeg',
+    }),
   });
 
   const responseText = await response.text();
@@ -63,9 +65,9 @@ async function uploadAudioToHeyGen(audioBuffer: Buffer): Promise<string> {
   }
 
   const data = JSON.parse(responseText);
-  const asset_id = data?.data?.id || data?.id;
+  const asset_id = data?.data?.id || data?.data?.asset_id || data?.id || data?.asset_id;
   if (!asset_id) throw new Error(`No asset_id returned: ${responseText}`);
-  
+
   console.log('✅ Audio uploaded, asset_id:', asset_id);
   return asset_id;
 }
@@ -92,17 +94,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let voicePayload: any;
 
     if (elevenLabsVoiceId) {
-      // ✅ ElevenLabs flow: generate → upload → use asset_id
       console.log('🇮🇳 Using ElevenLabs Indian voice...');
       const audioBuffer = await generateElevenLabsAudio(script, elevenLabsVoiceId);
       const asset_id = await uploadAudioToHeyGen(audioBuffer);
-
       voicePayload = {
         type: 'audio',
-        audio_asset_id: asset_id, // ✅ Correct field!
+        audio_asset_id: asset_id,
       };
     } else {
-      // Male avatars — use HeyGen voice directly
       console.log('🎤 Using HeyGen voice directly...');
       voicePayload = {
         type: 'text',
