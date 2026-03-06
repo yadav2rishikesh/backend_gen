@@ -1,29 +1,39 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// ✅ Best natural Indian voices from HeyGen
+const MY_VOICES = [
+  {
+    voice_id: "89f231a9556d43dfa2e2bf96594b9a1c",
+    name: "Nikhil Chhabria",
+    gender: "male",
+    language: "En",
+  },
+  {
+    voice_id: "1cc594799c8240f09f0eadc86755b4eb",
+    name: "Manish - Jio Avatar",
+    gender: "male",
+    language: "En",
+  },
+  {
+    voice_id: "dcf69bbbab5b41f2b75b9f86316c06c5", // ✅ Best natural Hindi female
+    name: "Aruna - Natural",
+    gender: "female",
+    language: "Hi",
+  },
+  {
+    voice_id: "9799f1ba6acd4b2b993fe813a18f9a91", // ✅ Friendly Hindi female
+    name: "Swara - Friendly",
+    gender: "female",
+    language: "Hi",
+  },
+];
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  try {
-    const response = await fetch('https://api.heygen.com/v2/voices', {
-      headers: {
-        'X-Api-Key': process.env.HEYGEN_API_KEY || '',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HeyGen Error ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    // ✅ Return voices list array directly so frontend can iterate it
-    return res.status(200).json(data.data?.list || data.data || []);
-
-  } catch (error: any) {
-    console.error('Voices error:', error);
-    return res.status(500).json({ error: 'Failed to fetch voices' });
-  }
+  return res.status(200).json({ voices: MY_VOICES });
 }
