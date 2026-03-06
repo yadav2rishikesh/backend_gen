@@ -30,12 +30,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             type: 'text',
             voice_id: voice_id,
             input_text: script,
-            speed: 0.90,   // ✅ Normal natural speed (not fast)
-            pitch: -1,     // ✅ Natural pitch (0 = no change)
+            speed: 0.90,
+            pitch: -1,
           },
         },
       ],
       dimension: { width: 1280, height: 720 },
+      avatar_version: 'v4', // ✅ Avatar IV added
       test: false,
     };
 
