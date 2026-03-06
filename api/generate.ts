@@ -3,14 +3,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '835028fdeb28a5d7bc0f4413eb5f058b047a7de6e8fba35649e04fc5a797b581';
 const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY || '';
 
+// ✅ Female avatars → ElevenLabs Indian voice
 const ELEVENLABS_VOICE_MAP: Record<string, string> = {
   "23a8ea2ea0294fe68b0f1f514081bf1d": "cgSgspJ2msm6clMCkdW9", // Ekta → Jessica Indian
   "10483c6d38564597a9491c0dbff9b0dd": "cgSgspJ2msm6clMCkdW9", // Swati → Jessica Indian
 };
 
-// ✅ Step 1: Generate audio from ElevenLabs
+// ✅ Step 1: Generate audio from ElevenLabs → returns mp3 buffer
 async function generateElevenLabsAudio(text: string, voiceId: string): Promise<Buffer> {
-  console.log(`🎙️ ElevenLabs | voice: ${voiceId}`);
+  console.log(`🎙️ ElevenLabs | voice: ${voiceId} | text: "${text.slice(0, 50)}"`);
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -36,25 +37,22 @@ async function generateElevenLabsAudio(text: string, voiceId: string): Promise<B
   return Buffer.from(await response.arrayBuffer());
 }
 
-// ✅ Step 2: Upload audio to HeyGen using correct API
-async function uploadAudioToHeyGen(audioBuffer: Buffer): Promise<string> {
-  console.log('📤 Uploading audio to HeyGen...');
+// ✅ Step 2: Upload to HeyGen upload.heygen.com/v1/asset → returns asset_id + url
+async function uploadAudioToHeyGen(audioBuffer: Buffer): Promise<{ asset_id: string; url: string }> {
+  console.log('📤 Uploading audio to HeyGen upload endpoint...');
 
-  // Convert to base64 and use the correct upload endpoint
-  const base64Audio = audioBuffer.toString('base64');
-  
-  const response = await fetch('https://api.heygen.com/v1/asset', {
+  const { Blob } = await import('buffer');
+  const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+
+  const formData = new FormData();
+  formData.append('file', blob as any, 'voice.mp3');
+
+  const response = await fetch('https://upload.heygen.com/v1/asset', {
     method: 'POST',
     headers: {
       'x-api-key': HEYGEN_API_KEY,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      data: base64Audio,
-      type: 'audio',
-      name: 'elevenlabs_voice.mp3',
-      content_type: 'audio/mpeg',
-    }),
+    body: formData as any,
   });
 
   const responseText = await response.text();
@@ -65,11 +63,13 @@ async function uploadAudioToHeyGen(audioBuffer: Buffer): Promise<string> {
   }
 
   const data = JSON.parse(responseText);
-  const asset_id = data?.data?.id || data?.data?.asset_id || data?.id || data?.asset_id;
-  if (!asset_id) throw new Error(`No asset_id returned: ${responseText}`);
+  const asset_id = data?.data?.asset_id || data?.asset_id;
+  const url = data?.data?.url || data?.url;
 
-  console.log('✅ Audio uploaded, asset_id:', asset_id);
-  return asset_id;
+  if (!asset_id && !url) throw new Error(`No asset_id or url returned: ${responseText}`);
+
+  console.log('✅ Audio uploaded | asset_id:', asset_id, '| url:', url);
+  return { asset_id, url };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -96,10 +96,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (elevenLabsVoiceId) {
       console.log('🇮🇳 Using ElevenLabs Indian voice...');
       const audioBuffer = await generateElevenLabsAudio(script, elevenLabsVoiceId);
-      const asset_id = await uploadAudioToHeyGen(audioBuffer);
+      const { asset_id, url } = await uploadAudioToHeyGen(audioBuffer);
+
+      // ✅ Use audio_url (works with v4), fallback to asset_id
       voicePayload = {
         type: 'audio',
-        audio_asset_id: asset_id,
+        ...(url ? { audio_url: url } : { audio_asset_id: asset_id }),
       };
     } else {
       console.log('🎤 Using HeyGen voice directly...');
@@ -129,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       test: false,
     };
 
-    console.log('Sending to HeyGen:', JSON.stringify(payload).slice(0, 300));
+    console.log('Sending to HeyGen:', JSON.stringify(payload).slice(0, 400));
 
     const response = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
