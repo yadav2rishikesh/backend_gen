@@ -113,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           type: 'text',
           voice_id,
           input_text: cleanScript,
-          speed: 1.03,   // slightly faster — natural Indian speech pace
+          speed: 1.02,   // slightly faster — natural Indian speech pace
           pitch: 0,     // no pitch shift
           locale: 'en-IN', // Indian English accent
         },
@@ -162,7 +162,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             type: 'text',
             voice_id,
             input_text: cleanScript,
-            speed: 1.3,
+            speed: 1.02,
             pitch: 0,
             locale: 'en-IN',
           },
@@ -210,7 +210,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             type: 'text',
             voice_id,
             input_text: cleanScript,
-            speed: 1.3,
+            speed: 1.02,
             pitch: 0,
           },
         }],
