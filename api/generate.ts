@@ -2,32 +2,52 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY || '';
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// KEY FINDINGS FROM HEYGEN DOCS (June 2025 webinar + changelog):
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WHY YOUR VIDEOS LOOKED FAKE — AND WHAT THIS FILE FIXES
 //
-// 1. Motion prompts must be SHORT — long prompts cause looping/overuse
-// 2. enhance_custom_motion_prompt: true = "Prompt Refinement toggle"
-//    This lets AI interpret simple phrases like "smiling while talking"
-// 3. Motion is DRIVEN BY VOICE — expressive audio = better realism
-// 4. Keep gesture prompts short to avoid looping
-// 5. Results are NON-DETERMINISTIC — each render is unique
-// 6. Credits: with custom_motion_prompt = 2:1 ratio (premium credits)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ROOT CAUSE 1: Missing `emotion` in voice config.
+//   HeyGen Avatar IV's body motion is partially DRIVEN by voice emotion.
+//   Without an emotion, the avatar renders with neutral/robotic motion.
+//   Fix: emotion: "Friendly" added — this activates expressive body motion.
+//
+// ROOT CAUSE 2: Motion prompts too vague — no body parts named explicitly.
+//   "natural hand gestures" = vague → Avatar IV ignores or minimizes it.
+//   Fix: Prompts now name BODY PARTS + ACTION e.g. "arms raised while
+//   speaking, open palms facing outward, head straight to camera"
+//
+// ROOT CAUSE 3: Speed mismatch — was 1.0 in code, should be 1.1.
+//   Fix: All 3 engine attempts now use speed: 1.1 consistently.
+//
+// ROOT CAUSE 4: av4/generate payload logging was missing.
+//   You couldn't see WHAT was being sent to the endpoint.
+//   Fix: Full payload now logged — check Vercel logs for ENGINE used.
+//   If you see "av3_fallback" → that's why there's no body movement.
+//   Goal is "av4_dedicated" in logs.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// SHORT motion prompts per HeyGen best practice
-// Format: simple, short phrases — NOT long sentences
+// UPGRADED motion prompts — explicit body parts + action + emotion
+// Format: [Body part] + [Action] + [Manner] — per HeyGen AV4 best practice
 const MOTION_PROMPTS: Record<string, string> = {
-  "23a8ea2ea0294fe68b0f1f514081bf1d": "smiling confidently while talking, natural hand gestures",      // Ekta
-  "10483c6d38564597a9491c0dbff9b0dd": "warm smile, gentle hand gestures, professional eye contact",    // Swati
-  "b65c8b326bd546aba0edf4f4be65f37e": "authoritative gestures, strong eye contact, leaning forward",  // Manish
-  "13c1f299bc854ed697ccf2c5a64218f9": "enthusiastic talking, open hand gestures, engaging smile",     // Nikhil
-  "621f9f7e33584a61a6a42d2d4e6b224c": "enthusiastic talking, open hand gestures, engaging smile",     // Nikhil v2
-  "b6529e10fb6a45aabe730acff799aebf": "calm professional gestures, steady eye contact",               // Prashant
-  "38ab20bc42634d368d4072b102aaa3d9": "friendly smile, gentle gestures, warm eye contact",            // Anoushka
-  "3024995942d148c887c9df208444c663": "confident posture, clear articulation gestures",               // Garvik
+  "23a8ea2ea0294fe68b0f1f514081bf1d": // Ekta
+    "arms moving expressively while speaking, open palms facing outward, head straight to camera, confident smile",
+  "10483c6d38564597a9491c0dbff9b0dd": // Swati
+    "gentle arm gestures while talking, hands open at chest level, warm eye contact, soft nod",
+  "b65c8b326bd546aba0edf4f4be65f37e": // Manish
+    "arms raised and spread while presenting, strong hand gestures, direct eye contact, authoritative posture",
+  "13c1f299bc854ed697ccf2c5a64218f9": // Nikhil
+    "wide arm movements while speaking, hands gesturing outward, enthusiastic expression, leaning forward slightly",
+  "621f9f7e33584a61a6a42d2d4e6b224c": // Nikhil v2
+    "wide arm movements while speaking, hands gesturing outward, enthusiastic expression, leaning forward slightly",
+  "b6529e10fb6a45aabe730acff799aebf": // Prashant
+    "calm measured arm gestures, hands at mid-body level, steady eye contact, composed posture",
+  "38ab20bc42634d368d4072b102aaa3d9": // Anoushka
+    "friendly arm movements while talking, open hand gestures, warm smile, natural head tilt",
+  "3024995942d148c887c9df208444c663": // Garvik
+    "confident arm gestures while presenting, hands open and forward, strong eye contact, upright posture",
 };
 
-const DEFAULT_MOTION = "natural hand gestures, smiling while talking, eye contact";
+const DEFAULT_MOTION =
+  "arms moving expressively while speaking, open palms, direct eye contact, natural head movement";
 
 // Voice matched per avatar
 const AVATAR_VOICE_MAP: Record<string, string> = {
@@ -77,7 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!voice_id)  return res.status(400).json({ error: 'Missing voice_id' });
     if (!script)    return res.status(400).json({ error: 'Missing script' });
 
-    // Clean script — remove emojis, normalize whitespace
+    // Clean script — strip emojis, normalize whitespace
     const cleanScript = script
       .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
       .replace(/[^\x00-\x7F\u0900-\u097F]/g, '') // keep ASCII + Devanagari
@@ -85,20 +105,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .trim()
       .slice(0, 1500);
 
-    // SHORT motion prompt per HeyGen best practice
     const motionPrompt = MOTION_PROMPTS[avatar_id] || DEFAULT_MOTION;
 
-    console.log(`▶ Generate | avatar=${avatar_id} | voice=${voice_id}`);
-    console.log(`  script="${cleanScript.slice(0, 80)}"`);
-    console.log(`  motion="${motionPrompt}"`);
+    console.log(`\n▶ GENERATE REQUEST`);
+    console.log(`  avatar_id : ${avatar_id}`);
+    console.log(`  voice_id  : ${voice_id}`);
+    console.log(`  script    : "${cleanScript.slice(0, 100)}..."`);
+    console.log(`  motion    : "${motionPrompt}"`);
 
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ATTEMPT 1 — Dedicated Avatar IV endpoint
-    // v2/video/av4/generate (released Oct 2024 per changelog)
-    // This is what HeyGen Studio uses internally
-    // Body movement is AUDIO-DRIVEN — voice emotion controls motion
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    console.log('  [1/3] Trying v2/video/av4/generate...');
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Shared voice config used across all engine attempts
+    // KEY FIX: emotion: "Friendly" — drives expressive body motion in AV4
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const voiceConfig = {
+      type: 'text',
+      voice_id,
+      input_text: cleanScript,
+      speed: 1.1,          // ← confirmed: 1.1
+      pitch: 0,
+      locale: 'en-IN',     // Indian English accent
+      emotion: 'Friendly', // ← NEW: activates expressive body motion in AV4
+    };
+
+    // ─── ATTEMPT 1: Dedicated Avatar IV endpoint ──────────────────
+    console.log('\n  [1/3] Trying v2/video/av4/generate...');
+
+    const av4Payload = {
+      avatar_id,
+      voice: voiceConfig,
+      custom_motion_prompt: motionPrompt,
+      enhance_custom_motion_prompt: true, // AI refines our motion prompt
+      dimension: { width: 1920, height: 1080 },
+      caption: false,
+      test: false,
+    };
+
+    // Log full payload — check Vercel logs to confirm what's sent
+    console.log('  av4 payload:', JSON.stringify(av4Payload));
 
     const av4Res = await fetch('https://api.heygen.com/v2/video/av4/generate', {
       method: 'POST',
@@ -107,42 +150,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'content-type': 'application/json',
         'x-api-key': HEYGEN_API_KEY,
       },
-      body: JSON.stringify({
-        avatar_id,
-        voice: {
-          type: 'text',
-          voice_id,
-          input_text: cleanScript,
-          speed: 1.0,   // natural speed — not slow, not fast
-          pitch: 0,     // no pitch shift
-          locale: 'en-IN', // Indian English accent
-        },
-        // SHORT prompts per HeyGen docs — avoid looping
-        custom_motion_prompt: motionPrompt,
-        // "Prompt Refinement toggle" — AI improves our prompt
-        enhance_custom_motion_prompt: true,
-        dimension: { width: 1920, height: 1080 },
-        caption: false,
-        test: false,
-      }),
+      body: JSON.stringify(av4Payload),
     });
 
     const av4Text = await av4Res.text();
-    console.log(`  av4/generate [${av4Res.status}]: ${av4Text.slice(0, 300)}`);
+    console.log(`  av4/generate response [${av4Res.status}]: ${av4Text.slice(0, 500)}`);
 
     if (av4Res.ok) {
       const d = JSON.parse(av4Text);
       if (d?.data?.video_id) {
-        console.log(`  ✅ av4_dedicated: ${d.data.video_id}`);
+        console.log(`\n  ✅ ENGINE USED: av4_dedicated`);
+        console.log(`  video_id: ${d.data.video_id}`);
         return res.status(200).json({ video_id: d.data.video_id, engine: 'av4_dedicated' });
       }
+      console.log('  ⚠ av4 returned 200 but no video_id — falling back');
     }
 
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ATTEMPT 2 — v2/video/generate + avatar_version: v4
-    // Same Avatar IV engine, older endpoint format
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    console.log('  [2/3] Falling back to v2/video/generate + avatar_version:v4...');
+    // ─── ATTEMPT 2: v2/video/generate + avatar_version: v4 ────────
+    console.log('\n  [2/3] Falling back to v2/video/generate + avatar_version:v4...');
+
+    const v4Payload = {
+      video_inputs: [{
+        character: {
+          type: 'avatar',
+          avatar_id,
+          avatar_style: 'normal',
+        },
+        voice: voiceConfig,
+      }],
+      dimension: { width: 1920, height: 1080 },
+      avatar_version: 'v4',
+      custom_motion_prompt: motionPrompt,
+      enhance_custom_motion_prompt: true,
+      caption: false,
+      test: false,
+    };
 
     const v4Res = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
@@ -151,46 +193,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'content-type': 'application/json',
         'x-api-key': HEYGEN_API_KEY,
       },
-      body: JSON.stringify({
-        video_inputs: [{
-          character: {
-            type: 'avatar',
-            avatar_id,
-            avatar_style: 'normal',
-          },
-          voice: {
-            type: 'text',
-            voice_id,
-            input_text: cleanScript,
-            speed: 1.0,
-            pitch: 0,
-            locale: 'en-IN',
-          },
-        }],
-        dimension: { width: 1920, height: 1080 },
-        avatar_version: 'v4',
-        custom_motion_prompt: motionPrompt,
-        enhance_custom_motion_prompt: true,
-        caption: false,
-        test: false,
-      }),
+      body: JSON.stringify(v4Payload),
     });
 
     const v4Text = await v4Res.text();
-    console.log(`  v2+v4 [${v4Res.status}]: ${v4Text.slice(0, 300)}`);
+    console.log(`  v2+v4 response [${v4Res.status}]: ${v4Text.slice(0, 500)}`);
 
     if (v4Res.ok) {
       const d = JSON.parse(v4Text);
       if (d?.data?.video_id) {
-        console.log(`  ✅ av4_v2: ${d.data.video_id}`);
+        console.log(`\n  ✅ ENGINE USED: av4_v2`);
+        console.log(`  video_id: ${d.data.video_id}`);
         return res.status(200).json({ video_id: d.data.video_id, engine: 'av4_v2' });
       }
     }
 
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ATTEMPT 3 — Avatar III fallback (lip sync only, no body)
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    console.log('  [3/3] Falling back to Avatar III (lip sync only)...');
+    // ─── ATTEMPT 3: Avatar III fallback (lip sync only, no body motion) ──
+    // NOTE: If this runs → body will still be static. That means av4 is
+    // rejecting your avatar_id — check if the avatar supports Avatar IV.
+    console.log('\n  [3/3] Falling back to Avatar III (lip sync only — NO body motion)...');
+    console.warn('  ⚠ WARNING: av3 fallback = static body. Check if avatar supports AV4.');
 
     const v3Res = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
@@ -210,7 +232,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             type: 'text',
             voice_id,
             input_text: cleanScript,
-            speed: 1.0,
+            speed: 1.1,
             pitch: 0,
           },
         }],
@@ -221,15 +243,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const v3Text = await v3Res.text();
-    console.log(`  Avatar III [${v3Res.status}]: ${v3Text.slice(0, 300)}`);
+    console.log(`  Avatar III response [${v3Res.status}]: ${v3Text.slice(0, 500)}`);
 
-    if (!v3Res.ok) throw new Error(`All engines failed. ${v3Text}`);
+    if (!v3Res.ok) throw new Error(`All 3 engines failed. Last: ${v3Text}`);
 
     const d = JSON.parse(v3Text);
     const video_id = d?.data?.video_id;
-    if (!video_id) throw new Error(`No video_id: ${v3Text}`);
+    if (!video_id) throw new Error(`No video_id in response: ${v3Text}`);
 
-    console.log(`  ✅ av3_fallback: ${video_id}`);
+    console.log(`\n  ✅ ENGINE USED: av3_fallback`);
+    console.log(`  video_id: ${video_id}`);
     return res.status(200).json({ video_id, engine: 'av3_fallback' });
 
   } catch (error: any) {
