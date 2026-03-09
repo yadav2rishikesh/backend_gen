@@ -128,13 +128,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     // ─── ATTEMPT 1: Dedicated Avatar IV endpoint ──────────────────
+    // FIXED: av4/generate uses FLAT fields (script + voice_id at top level)
+    // NOT a nested voice object — that was causing the 400 error:
+    // "You must provide either (script and voice_id), audio_url, or audio_asset_id"
     console.log('\n  [1/3] Trying v2/video/av4/generate...');
 
     const av4Payload = {
       avatar_id,
-      voice: voiceConfig,
+      // ✅ CORRECT FORMAT: flat fields, not nested voice object
+      script: cleanScript,
+      voice_id,
+      speed: 1.1,
+      pitch: 0,
+      locale: 'en-IN',
+      emotion: 'Friendly',       // drives expressive body motion
       custom_motion_prompt: motionPrompt,
-      enhance_custom_motion_prompt: true, // AI refines our motion prompt
+      enhance_custom_motion_prompt: true,
       dimension: { width: 1920, height: 1080 },
       caption: false,
       test: false,
