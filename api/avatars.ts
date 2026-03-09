@@ -6,6 +6,8 @@ const MY_AVATAR_IDS = [
   "b65c8b326bd546aba0edf4f4be65f37e", // Manish - Jio Avatar
   "23a8ea2ea0294fe68b0f1f514081bf1d", // Ekta
   "10483c6d38564597a9491c0dbff9b0dd", // Swati Verma ✅ added
+  "b6529e10fb6a45aabe730acff799aebf", // prasant 
+  "38ab20bc42634d368d4072b102aaa3d9", // anoushka 
 ];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
