@@ -3,26 +3,22 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY || '';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// WHY YOUR VIDEOS LOOKED FAKE — AND WHAT THIS FILE FIXES
+// CONFIRMED ENGINE ARCHITECTURE (from live Vercel logs debugging):
 //
-// ROOT CAUSE 1: Missing `emotion` in voice config.
-//   HeyGen Avatar IV's body motion is partially DRIVEN by voice emotion.
-//   Without an emotion, the avatar renders with neutral/robotic motion.
-//   Fix: emotion: "Friendly" added — this activates expressive body motion.
+// ✅ CORRECT ENGINE for custom trained avatars (Manish, Ekta, etc.):
+//    → v2/video/generate + avatar_version: 'v4'  (called "av4_v2" in logs)
+//    → This IS Avatar IV for trained custom avatars
+//    → Supports: custom_motion_prompt, enhance_custom_motion_prompt, emotion
 //
-// ROOT CAUSE 2: Motion prompts too vague — no body parts named explicitly.
-//   "natural hand gestures" = vague → Avatar IV ignores or minimizes it.
-//   Fix: Prompts now name BODY PARTS + ACTION e.g. "arms raised while
-//   speaking, open palms facing outward, head straight to camera"
+// ❌ WRONG — v2/video/av4/generate:
+//    → This endpoint is for PHOTO AVATARS (static image → talking video)
+//    → Requires image_key field — not for trained avatars at all
+//    → Removed from code to avoid unnecessary 400 error on every request
 //
-// ROOT CAUSE 3: Speed mismatch — was 1.0 in code, should be 1.1.
-//   Fix: All 3 engine attempts now use speed: 1.1 consistently.
-//
-// ROOT CAUSE 4: av4/generate payload logging was missing.
-//   You couldn't see WHAT was being sent to the endpoint.
-//   Fix: Full payload now logged — check Vercel logs for ENGINE used.
-//   If you see "av3_fallback" → that's why there's no body movement.
-//   Goal is "av4_dedicated" in logs.
+// WHAT DRIVES BODY MOTION in av4_v2:
+//    1. emotion: "Friendly" in voice config — most important
+//    2. custom_motion_prompt with explicit body parts (arms, hands)
+//    3. enhance_custom_motion_prompt: true — AI refines the prompt
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // UPGRADED motion prompts — explicit body parts + action + emotion
@@ -127,56 +123,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       emotion: 'Friendly', // ← NEW: activates expressive body motion in AV4
     };
 
-    // ─── ATTEMPT 1: Dedicated Avatar IV endpoint ──────────────────
-    // FIXED: av4/generate uses FLAT fields (script + voice_id at top level)
-    // NOT a nested voice object — that was causing the 400 error:
-    // "You must provide either (script and voice_id), audio_url, or audio_asset_id"
-    console.log('\n  [1/3] Trying v2/video/av4/generate...');
-
-    const av4Payload = {
-      avatar_id,
-      // ✅ CORRECT FORMAT: flat fields, not nested voice object
-      script: cleanScript,
-      voice_id,
-      speed: 1.1,
-      pitch: 0,
-      locale: 'en-IN',
-      emotion: 'Friendly',       // drives expressive body motion
-      custom_motion_prompt: motionPrompt,
-      enhance_custom_motion_prompt: true,
-      dimension: { width: 1920, height: 1080 },
-      caption: false,
-      test: false,
-    };
-
-    // Log full payload — check Vercel logs to confirm what's sent
-    console.log('  av4 payload:', JSON.stringify(av4Payload));
-
-    const av4Res = await fetch('https://api.heygen.com/v2/video/av4/generate', {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'x-api-key': HEYGEN_API_KEY,
-      },
-      body: JSON.stringify(av4Payload),
-    });
-
-    const av4Text = await av4Res.text();
-    console.log(`  av4/generate response [${av4Res.status}]: ${av4Text.slice(0, 500)}`);
-
-    if (av4Res.ok) {
-      const d = JSON.parse(av4Text);
-      if (d?.data?.video_id) {
-        console.log(`\n  ✅ ENGINE USED: av4_dedicated`);
-        console.log(`  video_id: ${d.data.video_id}`);
-        return res.status(200).json({ video_id: d.data.video_id, engine: 'av4_dedicated' });
-      }
-      console.log('  ⚠ av4 returned 200 but no video_id — falling back');
-    }
-
-    // ─── ATTEMPT 2: v2/video/generate + avatar_version: v4 ────────
-    console.log('\n  [2/3] Falling back to v2/video/generate + avatar_version:v4...');
+    // ─── ATTEMPT 1: Avatar IV for custom trained avatars ──────────
+    // v2/video/generate + avatar_version: v4
+    // This is the CORRECT Avatar IV engine for Manish, Ekta, Swati etc.
+    // (v2/video/av4/generate is for Photo Avatars only — NOT for trained avatars)
+    console.log('\n  [1/2] Trying v2/video/generate + avatar_version:v4 (Avatar IV)...');
 
     const v4Payload = {
       video_inputs: [{
@@ -206,22 +157,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const v4Text = await v4Res.text();
-    console.log(`  v2+v4 response [${v4Res.status}]: ${v4Text.slice(0, 500)}`);
+    console.log(`  Avatar IV response [${v4Res.status}]: ${v4Text.slice(0, 500)}`);
 
     if (v4Res.ok) {
       const d = JSON.parse(v4Text);
       if (d?.data?.video_id) {
-        console.log(`\n  ✅ ENGINE USED: av4_v2`);
+        console.log(`\n  ✅ ENGINE USED: av4_v2 (Avatar IV — correct engine for custom avatars)`);
         console.log(`  video_id: ${d.data.video_id}`);
         return res.status(200).json({ video_id: d.data.video_id, engine: 'av4_v2' });
       }
     }
 
-    // ─── ATTEMPT 3: Avatar III fallback (lip sync only, no body motion) ──
-    // NOTE: If this runs → body will still be static. That means av4 is
-    // rejecting your avatar_id — check if the avatar supports Avatar IV.
-    console.log('\n  [3/3] Falling back to Avatar III (lip sync only — NO body motion)...');
-    console.warn('  ⚠ WARNING: av3 fallback = static body. Check if avatar supports AV4.');
+    // ─── ATTEMPT 2: Avatar III fallback (lip sync only, no body motion) ──
+    // If this runs → body will be static. Avatar IV rejected the avatar_id.
+    console.log('\n  [2/2] Falling back to Avatar III (lip sync only — NO body motion)...');
+    console.warn('  ⚠ WARNING: av3 fallback = static body.');
 
     const v3Res = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
